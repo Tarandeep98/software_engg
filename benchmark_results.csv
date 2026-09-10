@@ -1,0 +1,11 @@
+scenario,write_latency_ms,election_time_ms
+S1_NormalWrite_Run1,36.67,0.00
+S1_NormalWrite_Run2,47.71,0.00
+S1_NormalWrite_Run3,63.81,0.00
+S1_NormalWrite_Run4,39.77,0.00
+S1_NormalWrite_Run5,38.47,0.00
+S2_LeaderCrash_Run1,0.00,328.48
+S2_LeaderCrash_Run2,0.00,227.21
+S2_LeaderCrash_Run3,0.00,301.45
+S2_LeaderCrash_Run4,0.00,244.40
+S2_LeaderCrash_Run5,0.00,296.86

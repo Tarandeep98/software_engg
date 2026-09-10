@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raft Consensus & Distributed KV Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #0b0f17;
+      --bg-surface: #121824;
+      --bg-card: #182234;
+      --bg-subtle: #212c42;
+      --border-color: #2a3854;
+      --border-bright: #3c4f73;
+      
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+
+      /* State colors per assignment specs */
+      --color-leader: #f59e0b;    /* Gold */
+      --color-leader-bg: rgba(245, 158, 11, 0.12);
+      --color-leader-glow: rgba(245, 158, 11, 0.35);
+
+      --color-candidate: #f97316; /* Orange */
+      --color-candidate-bg: rgba(249, 115, 22, 0.12);
+
+      --color-follower: #3b82f6;  /* Blue */
+      --color-follower-bg: rgba(59, 130, 246, 0.12);
+
+      --color-offline: #64748b;   /* Gray */
+      --color-offline-bg: rgba(100, 116, 139, 0.12);
+
+      --color-committed: #10b981; /* Emerald */
+      --color-committed-bg: rgba(16, 185, 129, 0.15);
+
+      --color-uncommitted: #eab308; /* Amber */
+      --color-uncommitted-bg: rgba(234, 179, 8, 0.12);
+
+      --color-danger: #ef4444;
+      --color-danger-bg: rgba(239, 68, 68, 0.15);
+      
+      --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: var(--font-main);
+      line-height: 1.5;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* -------------------------------------------------------------------------
+       Top Bar: Cluster Health
+    ------------------------------------------------------------------------- */
+    .top-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 18px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .cluster-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .cluster-title .badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--bg-subtle);
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+    }
+
+    .cluster-health {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .health-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .health-badge.healthy {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .health-badge.warning {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .health-badge.critical {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    .stat-pill {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .stat-pill .label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    .stat-pill .value {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* -------------------------------------------------------------------------
+       Three Node Cards (CSS Grid)
+    ------------------------------------------------------------------------- */
+    .nodes-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    @media (max-width: 1024px) {
+      .nodes-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .node-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.3s, transform 0.2s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      position: relative;
+    }
+
+    .node-card.state-leader {
+      border-color: var(--color-leader);
+      box-shadow: 0 0 20px var(--color-leader-glow);
+    }
+
+    .node-card.state-candidate {
+      border-color: var(--color-candidate);
+    }
+
+    .node-card.state-follower {
+      border-color: var(--color-follower);
+    }
+
+    .node-card.state-offline {
+      border-color: var(--color-offline);
+      opacity: 0.65;
+    }
+
+    .node-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-card);
+    }
+
+    .node-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .node-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .node-port {
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+    }
+
+    .role-badge {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .role-badge.Leader {
+      background: var(--color-leader-bg);
+      color: var(--color-leader);
+      border: 1px solid var(--color-leader);
+    }
+
+    .role-badge.Candidate {
+      background: var(--color-candidate-bg);
+      color: var(--color-candidate);
+      border: 1px solid var(--color-candidate);
+    }
+
+    .role-badge.Follower {
+      background: var(--color-follower-bg);
+      color: var(--color-follower);
+      border: 1px solid var(--color-follower);
+    }
+
+    .role-badge.Offline {
+      background: var(--color-offline-bg);
+      color: var(--color-offline);
+      border: 1px solid var(--color-offline);
+    }
+
+    .node-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      flex: 1;
+    }
+
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      background: var(--bg-card);
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+    }
+
+    .metric-item {
+      text-align: center;
+    }
+
+    .metric-item .metric-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .metric-item .metric-value {
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .node-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: auto;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s;
+      font-family: var(--font-main);
+    }
+
+    .btn-kill {
+      background: var(--color-danger-bg);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.4);
+      flex: 1;
+    }
+
+    .btn-kill:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    .btn-restart {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border-color: rgba(59, 130, 246, 0.4);
+      flex: 1;
+    }
+
+    .btn-restart:hover:not(:disabled) {
+      background: rgba(59, 130, 246, 0.25);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* -------------------------------------------------------------------------
+       Live Log Replication View (3 Columns)
+    ------------------------------------------------------------------------- */
+    .log-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .section-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .log-legend {
+      display: flex;
+      gap: 16px;
+      font-size: 0.8rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-badge {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    .legend-badge.committed {
+      background: var(--color-committed);
+    }
+
+    .legend-badge.uncommitted {
+      background: var(--color-uncommitted);
+      border: 1px dashed #fff;
+    }
+
+    .logs-columns {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 1024px) {
+      .logs-columns {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .log-column {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px;
+      min-height: 220px;
+      max-height: 320px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .log-column-header {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .log-entry {
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+
+    .log-entry.committed {
+      background: var(--color-committed-bg);
+      border: 1px solid var(--color-committed);
+    }
+
+    .log-entry.uncommitted {
+      background: var(--color-uncommitted-bg);
+      border: 1px dashed var(--color-uncommitted);
+    }
+
+    .log-entry-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .log-status-tag {
+      font-size: 0.65rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .log-status-tag.committed {
+      background: rgba(16, 185, 129, 0.3);
+      color: #34d399;
+    }
+
+    .log-status-tag.uncommitted {
+      background: rgba(234, 179, 8, 0.3);
+      color: #facc15;
+    }
+
+    .log-cmd {
+      font-weight: 600;
+      color: var(--text-main);
+      word-break: break-all;
+    }
+
+    .empty-log {
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      text-align: center;
+      margin: auto;
+      font-style: italic;
+    }
+
+    /* -------------------------------------------------------------------------
+       Command Form & KV Store Section
+    ------------------------------------------------------------------------- */
+    .interaction-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 900px) {
+      .interaction-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .form-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .input-field {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-family: var(--font-main);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+      flex: 1;
+    }
+
+    .input-field:focus {
+      border-color: var(--color-follower);
+    }
+
+    .select-field {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-family: var(--font-main);
+      font-size: 0.9rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #1d4ed8;
+    }
+
+    .btn-secondary {
+      background: var(--bg-subtle);
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--border-color);
+    }
+
+    .feedback-banner {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.825rem;
+      font-family: var(--font-mono);
+      display: none;
+      word-break: break-all;
+    }
+
+    .feedback-banner.success {
+      display: block;
+      background: var(--color-committed-bg);
+      border: 1px solid var(--color-committed);
+      color: #6ee7b7;
+    }
+
+    .feedback-banner.redirect {
+      display: block;
+      background: var(--color-leader-bg);
+      border: 1px solid var(--color-leader);
+      color: #fcd34d;
+    }
+
+    .feedback-banner.error {
+      display: block;
+      background: var(--color-danger-bg);
+      border: 1px solid var(--color-danger);
+      color: #fca5a5;
+    }
+
+    /* Key-Value Table */
+    .kv-table-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow-x: auto;
+      max-height: 250px;
+    }
+
+    .kv-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+    }
+
+    .kv-table th, .kv-table td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .kv-table th {
+      background: var(--bg-subtle);
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* -------------------------------------------------------------------------
+       Event Log Stream
+    ------------------------------------------------------------------------- */
+    .event-log-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .event-terminal {
+      background: #080c14;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      height: 180px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .event-line {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+    }
+
+    .event-time {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    .event-text {
+      color: var(--text-main);
+    }
+
+    .event-text.leader {
+      color: var(--color-leader);
+      font-weight: 600;
+    }
+
+    .event-text.election {
+      color: var(--color-candidate);
+    }
+
+    .event-text.kill {
+      color: var(--color-danger);
+    }
+
+    .event-text.restart {
+      color: #60a5fa;
+    }
+
+    .event-text.commit {
+      color: #34d399;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Top Bar: Cluster Health -->
+    <header class="top-bar">
+      <div class="brand-section">
+        <h1 class="cluster-title">
+          <span>⚡ Raft Consensus Cluster</span>
+          <span class="badge">3 Nodes</span>
+        </h1>
+      </div>
+
+      <div class="cluster-health">
+        <div id="clusterHealthBadge" class="health-badge healthy">
+          <span class="pulse-dot"></span>
+          <span id="healthText">Connecting to Cluster...</span>
+        </div>
+
+        <div class="stat-pill">
+          <span class="label">Cluster Term</span>
+          <span id="clusterTerm" class="value">-</span>
+        </div>
+
+        <div class="stat-pill">
+          <span class="label">Quorum Status</span>
+          <span id="quorumStatus" class="value">0 / 3 Active</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Three Node Panels -->
+    <section class="nodes-grid" id="nodesContainer">
+      <!-- Generated by JS for Node 1, Node 2, Node 3 -->
+    </section>
+
+    <!-- Live Log Replication View -->
+    <section class="log-section">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span>📜 Live Log Replication</span>
+        </h2>
+        <div class="log-legend">
+          <div class="legend-item">
+            <span class="legend-badge committed"></span>
+            <span>Committed (&le; Commit Index)</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-badge uncommitted"></span>
+            <span>Uncommitted (Pending Majority)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="logs-columns" id="logsContainer">
+        <!-- Generated by JS for Node 1, Node 2, Node 3 -->
+      </div>
+    </section>
+
+    <!-- Key-Value Store & Command Form Interaction -->
+    <section class="interaction-grid">
+      
+      <!-- Command Form -->
+      <div class="card-panel">
+        <h2 class="section-title">
+          <span>⚙️ Distributed KV Command</span>
+        </h2>
+
+        <div class="form-group">
+          <label class="form-label" for="targetNodeSelect">Target Node</label>
+          <select id="targetNodeSelect" class="select-field">
+            <option value="auto">Auto-Detect Leader</option>
+            <option value="http://127.0.0.1:8001">Node 1 (Port 8001)</option>
+            <option value="http://127.0.0.1:8002">Node 2 (Port 8002)</option>
+            <option value="http://127.0.0.1:8003">Node 3 (Port 8003)</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label" for="kvKey">Key</label>
+            <input type="text" id="kvKey" class="input-field" placeholder="e.g. user_101">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label" for="kvValue">Value (for SET)</label>
+            <input type="text" id="kvValue" class="input-field" placeholder="e.g. Alice">
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button id="btnSet" class="btn btn-primary" onclick="handleKvAction('SET')">POST /kv/set</button>
+          <button id="btnGet" class="btn btn-secondary" onclick="handleKvAction('GET')">GET /kv/get</button>
+          <button id="btnDelete" class="btn btn-secondary" onclick="handleKvAction('DELETE')">POST /kv/delete</button>
+        </div>
+
+        <div id="cmdFeedback" class="feedback-banner"></div>
+      </div>
+
+      <!-- Applied KV State Machine Viewer -->
+      <div class="card-panel">
+        <div class="section-header">
+          <h2 class="section-title">
+            <span>🗄️ Committed State Machine Table</span>
+          </h2>
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="refreshKvStore()">Refresh</button>
+        </div>
+
+        <div class="kv-table-container">
+          <table class="kv-table">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Committed Value</th>
+              </tr>
+            </thead>
+            <tbody id="kvTableBody">
+              <tr>
+                <td colspan="2" style="text-align: center; color: var(--text-dim);">No key-value pairs committed yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Event Log -->
+    <section class="event-log-container">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span>📡 Cluster Event Stream</span>
+        </h2>
+        <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="clearEvents()">Clear Log</button>
+      </div>
+
+      <div class="event-terminal" id="eventTerminal">
+        <div class="event-line">
+          <span class="event-time">--:--:--</span>
+          <span class="event-text">Dashboard initialized. Beginning 500ms cluster poll...</span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    // Configuration for the 3 nodes
+    const NODES = [
+      { id: 1, port: 8001, url: "http://127.0.0.1:8001" },
+      { id: 2, port: 8002, url: "http://127.0.0.1:8002" },
+      { id: 3, port: 8003, url: "http://127.0.0.1:8003" }
+    ];
+
+    // State tracking for diffing events between poll intervals
+    let previousNodeStates = {};
+    let clusterLeader = null;
+    let pollCount = 0;
+
+    // Initialize UI structure
+    function initUI() {
+      const nodesContainer = document.getElementById("nodesContainer");
+      const logsContainer = document.getElementById("logsContainer");
+
+      nodesContainer.innerHTML = "";
+      logsContainer.innerHTML = "";
+
+      NODES.forEach(n => {
+        // Render node panel card
+        nodesContainer.innerHTML += `
+          <div class="node-card state-offline" id="nodeCard-${n.id}">
+            <div class="node-header">
+              <div class="node-title-group">
+                <span class="node-name">Node ${n.id}</span>
+                <span class="node-port">:${n.port}</span>
+              </div>
+              <span class="role-badge Offline" id="nodeBadge-${n.id}">Offline</span>
+            </div>
+            <div class="node-body">
+              <div class="metrics-row">
+                <div class="metric-item">
+                  <div class="metric-label">Term</div>
+                  <div class="metric-value" id="nodeTerm-${n.id}">-</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">Commit Index</div>
+                  <div class="metric-value" id="nodeCommit-${n.id}">-</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">Last Log</div>
+                  <div class="metric-value" id="nodeLastLog-${n.id}">-</div>
+                </div>
+              </div>
+              <div class="node-actions">
+                <button class="btn btn-kill" id="btnKill-${n.id}" onclick="killNode(${n.id})">
+                  🛑 Kill
+                </button>
+                <button class="btn btn-restart" id="btnRestart-${n.id}" onclick="restartNode(${n.id})">
+                  🔄 Restart
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // Render log column
+        logsContainer.innerHTML += `
+          <div class="log-column" id="logColumn-${n.id}">
+            <div class="log-column-header">
+              <span>Node ${n.id} Log</span>
+              <span id="logCount-${n.id}">0 entries</span>
+            </div>
+            <div id="logEntries-${n.id}" style="display: flex; flex-direction: column; gap: 8px;">
+              <div class="empty-log">No entries</div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // Append timestamped event to bottom stream
+    function addEvent(message, type = "") {
+      const terminal = document.getElementById("eventTerminal");
+      const now = new Date();
+      const timeStr = now.toTimeString().split(" ")[0];
+
+      const line = document.createElement("div");
+      line.className = "event-line";
+      line.innerHTML = `
+        <span class="event-time">${timeStr}</span>
+        <span class="event-text ${type}">${message}</span>
+      `;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function clearEvents() {
+      document.getElementById("eventTerminal").innerHTML = "";
+    }
+
+    // -------------------------------------------------------------------------
+    // Polling Loop (every 500ms)
+    // -------------------------------------------------------------------------
+    async function pollCluster() {
+      pollCount++;
+      const statusPromises = NODES.map(node => 
+        fetch(`${node.url}/status`, { signal: AbortSignal.timeout(400) })
+          .then(async res => {
+            if (res.ok) return await res.json();
+            return { error: true, status: res.status };
+          })
+          .catch(() => ({ error: true, offline: true }))
+      );
+
+      const logPromises = NODES.map(node => 
+        fetch(`${node.url}/log`, { signal: AbortSignal.timeout(400) })
+          .then(async res => {
+            if (res.ok) return await res.json();
+            return [];
+          })
+          .catch(() => [])
+      );
+
+      const [statuses, logs] = await Promise.all([
+        Promise.all(statusPromises),
+        Promise.all(logPromises)
+      ]);
+
+      let leaders = [];
+      let terms = new Set();
+      let activeNodesCount = 0;
+
+      NODES.forEach((node, i) => {
+        const s = statuses[i];
+        const l = logs[i];
+        const card = document.getElementById(`nodeCard-${node.id}`);
+        const badge = document.getElementById(`nodeBadge-${node.id}`);
+        const termEl = document.getElementById(`nodeTerm-${node.id}`);
+        const commitEl = document.getElementById(`nodeCommit-${node.id}`);
+        const lastLogEl = document.getElementById(`nodeLastLog-${node.id}`);
+        const btnKill = document.getElementById(`btnKill-${node.id}`);
+        const btnRestart = document.getElementById(`btnRestart-${node.id}`);
+
+        const prev = previousNodeStates[node.id] || {};
+
+        if (s.error || s.offline || s.is_dead) {
+          // Node is offline or dead
+          card.className = "node-card state-offline";
+          badge.className = "role-badge Offline";
+          badge.textContent = "Offline";
+          termEl.textContent = "-";
+          commitEl.textContent = "-";
+          lastLogEl.textContent = "-";
+          btnKill.disabled = true;
+          btnRestart.disabled = false;
+
+          if (prev.online) {
+            addEvent(`Node ${node.id} went OFFLINE / dead`, "kill");
+          }
+
+          previousNodeStates[node.id] = { online: false, state: "Offline", term: 0 };
+        } else {
+          // Node is reachable & alive
+          activeNodesCount++;
+          const state = s.role || s.state; // Leader, Candidate, Follower
+          terms.add(s.term);
+
+          if (state === "Leader") {
+            leaders.push(node.id);
+            clusterLeader = node;
+          }
+
+          card.className = `node-card state-${state.toLowerCase()}`;
+          badge.className = `role-badge ${state}`;
+          badge.textContent = state;
+          termEl.textContent = s.term;
+          commitEl.textContent = s.commit_index;
+          lastLogEl.textContent = s.last_log_index;
+          btnKill.disabled = false;
+          btnRestart.disabled = true;
+
+          // Event diffing
+          if (!prev.online) {
+            addEvent(`Node ${node.id} came ONLINE as ${state} (Term ${s.term})`, "restart");
+          } else if (prev.state !== state) {
+            const eventClass = state === "Leader" ? "leader" : (state === "Candidate" ? "election" : "");
+            addEvent(`Node ${node.id} transitioned from ${prev.state} to ${state} (Term ${s.term})`, eventClass);
+          } else if (prev.term !== s.term) {
+            addEvent(`Node ${node.id} advanced to Term ${s.term}`, "election");
+          }
+
+          previousNodeStates[node.id] = { online: true, state: state, term: s.term, commit_index: s.commit_index };
+        }
+
+        // Render log entries for this node
+        renderLog(node.id, l, s.commit_index || 0);
+      });
+
+      // Update Cluster Health Top Bar
+      updateClusterHealth(activeNodesCount, leaders, terms);
+
+      // Periodically refresh state machine KV viewer
+      if (pollCount % 2 === 0) {
+        refreshKvStore();
+      }
+    }
+
+    function updateClusterHealth(activeCount, leaders, terms) {
+      const badge = document.getElementById("clusterHealthBadge");
+      const healthText = document.getElementById("healthText");
+      const termEl = document.getElementById("clusterTerm");
+      const quorumEl = document.getElementById("quorumStatus");
+
+      quorumEl.textContent = `${activeCount} / 3 Active`;
+
+      if (terms.size > 0) {
+        termEl.textContent = Array.from(terms).join(", ");
+      } else {
+        termEl.textContent = "-";
+      }
+
+      // Rule: Green if exactly one leader + all reachable nodes agree on current term
+      if (leaders.length === 1 && terms.size === 1 && activeCount >= 2) {
+        badge.className = "health-badge healthy";
+        healthText.textContent = `Cluster Healthy — Node ${leaders[0]} is Leader`;
+      } else if (leaders.length === 0 && activeCount >= 2) {
+        badge.className = "health-badge warning";
+        healthText.textContent = `Election in Progress (No Leader)`;
+      } else if (terms.size > 1) {
+        badge.className = "health-badge warning";
+        healthText.textContent = `Term Mismatch Across Nodes`;
+      } else if (activeCount < 2) {
+        badge.className = "health-badge critical";
+        healthText.textContent = `No Quorum (Cluster Halted)`;
+      } else if (leaders.length > 1) {
+        badge.className = "health-badge critical";
+        healthText.textContent = `Split Brain Warning: Multiple Leaders (${leaders.join(", ")})`;
+      } else {
+        badge.className = "health-badge warning";
+        healthText.textContent = `Cluster Reorganizing`;
+      }
+    }
+
+    function renderLog(nodeId, logList, commitIndex) {
+      const container = document.getElementById(`logEntries-${nodeId}`);
+      const countEl = document.getElementById(`logCount-${nodeId}`);
+
+      if (!logList || logList.length === 0) {
+        container.innerHTML = `<div class="empty-log">Log is empty</div>`;
+        countEl.textContent = "0 entries";
+        return;
+      }
+
+      countEl.textContent = `${logList.length} entries`;
+      container.innerHTML = "";
+
+      logList.forEach(entry => {
+        const isCommitted = entry.committed;
+        const cmd = entry.command || {};
+        const cmdStr = cmd.type === "SET" 
+          ? `SET ${cmd.key} = "${cmd.value || ''}"` 
+          : `DELETE ${cmd.key}`;
+
+        const entryDiv = document.createElement("div");
+        entryDiv.className = `log-entry ${isCommitted ? 'committed' : 'uncommitted'}`;
+        entryDiv.innerHTML = `
+          <div class="log-entry-meta">
+            <span>#${entry.index} (Term ${entry.term})</span>
+            <span class="log-status-tag ${isCommitted ? 'committed' : 'uncommitted'}">
+              ${isCommitted ? '✓ Committed' : '⏳ Pending'}
+            </span>
+          </div>
+          <div class="log-cmd">${cmdStr}</div>
+        `;
+        container.appendChild(entryDiv);
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // Admin Actions: Kill / Restart
+    // -------------------------------------------------------------------------
+    async function killNode(nodeId) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${8000 + nodeId}/admin/kill`, { method: "POST" });
+        if (res.ok) {
+          addEvent(`Admin sent KILL signal to Node ${nodeId}`, "kill");
+          pollCluster();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function restartNode(nodeId) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${8000 + nodeId}/admin/restart`, { method: "POST" });
+        if (res.ok) {
+          addEvent(`Admin sent RESTART signal to Node ${nodeId}`, "restart");
+          pollCluster();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Client KV Actions (with 421 leader_hint Auto-Redirect)
+    // -------------------------------------------------------------------------
+    async function handleKvAction(actionType) {
+      const keyInput = document.getElementById("kvKey");
+      const valInput = document.getElementById("kvValue");
+      const targetSelect = document.getElementById("targetNodeSelect");
+      const feedback = document.getElementById("cmdFeedback");
+
+      const key = keyInput.value.trim();
+      const val = valInput.value.trim();
+
+      if (!key) {
+        feedback.className = "feedback-banner error";
+        feedback.textContent = "Please enter a key.";
+        return;
+      }
+
+      let targetUrl = targetSelect.value;
+      if (targetUrl === "auto") {
+        if (!clusterLeader) {
+          feedback.className = "feedback-banner error";
+          feedback.textContent = "Cannot auto-detect leader: No leader active in cluster.";
+          return;
+        }
+        targetUrl = clusterLeader.url;
+      }
+
+      feedback.className = "feedback-banner";
+      feedback.textContent = `Executing ${actionType} on ${targetUrl}...`;
+
+      try {
+        let endpoint = "";
+        let options = {};
+
+        if (actionType === "GET") {
+          endpoint = `${targetUrl}/kv/get?key=${encodeURIComponent(key)}`;
+          options = { method: "GET" };
+        } else if (actionType === "SET") {
+          endpoint = `${targetUrl}/kv/set`;
+          options = {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key, value: val })
+          };
+        } else if (actionType === "DELETE") {
+          endpoint = `${targetUrl}/kv/delete`;
+          options = {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key })
+          };
+        }
+
+        let resp = await fetch(endpoint, options);
+
+        // Check for 421 Misdirected Request with leader_hint
+        if (resp.status === 421) {
+          const errData = await resp.json();
+          const leaderHint = errData.leader_hint;
+          
+          if (leaderHint) {
+            const redirectUrl = `http://127.0.0.1:${8000 + leaderHint}`;
+            feedback.className = "feedback-banner redirect";
+            feedback.textContent = `Node returned 421 (Not Leader). Auto-redirecting to Leader (Node ${leaderHint} on port ${8000 + leaderHint})...`;
+            addEvent(`421 Not Leader returned. Retrying against leader Node ${leaderHint}`, "election");
+
+            // Automatic retry against leader_hint
+            let redirectEndpoint = endpoint.replace(targetUrl, redirectUrl);
+            let retryResp = await fetch(redirectEndpoint, options);
+            if (retryResp.ok) {
+              const resData = await retryResp.json();
+              feedback.className = "feedback-banner success";
+              feedback.textContent = `Redirect Succeeded! ${actionType} committed by Leader Node ${leaderHint}. Result: ${JSON.stringify(resData)}`;
+              addEvent(`${actionType} key="${key}" successfully replicated and committed`, "commit");
+              refreshKvStore();
+              return;
+            } else {
+              feedback.className = "feedback-banner error";
+              feedback.textContent = `Redirected request to Node ${leaderHint} failed with HTTP ${retryResp.status}`;
+              return;
+            }
+          } else {
+            feedback.className = "feedback-banner error";
+            feedback.textContent = `Node returned 421 (Not Leader), but leader_hint was null (election in progress).`;
+            return;
+          }
+        }
+
+        if (resp.ok) {
+          const resData = await resp.json();
+          feedback.className = "feedback-banner success";
+          feedback.textContent = `Success! Response: ${JSON.stringify(resData)}`;
+          addEvent(`${actionType} key="${key}" completed successfully`, "commit");
+          refreshKvStore();
+        } else if (resp.status === 404) {
+          feedback.className = "feedback-banner error";
+          feedback.textContent = `Key '${key}' not found in state machine (HTTP 404).`;
+        } else {
+          feedback.className = "feedback-banner error";
+          feedback.textContent = `Request failed with HTTP status ${resp.status}.`;
+        }
+
+      } catch (err) {
+        feedback.className = "feedback-banner error";
+        feedback.textContent = `Connection error: ${err.message}`;
+      }
+    }
+
+    // Refresh Key-Value Table from whichever node is alive
+    async function refreshKvStore() {
+      const tableBody = document.getElementById("kvTableBody");
+      
+      // Query first reachable node
+      for (const node of NODES) {
+        try {
+          const res = await fetch(`${node.url}/kv/all`, { signal: AbortSignal.timeout(300) });
+          if (res.ok) {
+            const data = await res.json();
+            const store = data.store || {};
+            const keys = Object.keys(store);
+
+            if (keys.length === 0) {
+              tableBody.innerHTML = `<tr><td colspan="2" style="text-align: center; color: var(--text-dim);">No key-value pairs committed yet.</td></tr>`;
+            } else {
+              tableBody.innerHTML = keys.map(k => `
+                <tr>
+                  <td style="color: #60a5fa; font-weight: 600;">${k}</td>
+                  <td>${store[k]}</td>
+                </tr>
+              `).join("");
+            }
+            return;
+          }
+        } catch (e) {
+          // try next node
+        }
+      }
+    }
+
+    // Initialize and start polling
+    initUI();
+    pollCluster();
+    setInterval(pollCluster, 500);
+  </script>
+</body>
+</html>
