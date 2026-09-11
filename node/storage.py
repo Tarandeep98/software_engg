@@ -168,6 +168,25 @@ class Storage:
     # State Machine Operations (kv_store table)
     # -------------------------------------------------------------------------
 
+    def apply_state_machines_batch(self, operations: List[Tuple[str, str, Optional[str]]]) -> None:
+        """Apply a batch of committed commands to the kv_store in a single transaction."""
+        if not operations:
+            return
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for command_type, key, value in operations:
+                    if command_type.upper() == "NOOP":
+                        continue
+                    elif command_type.upper() == "SET":
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO kv_store (key, value)
+                            VALUES (?, ?);
+                        """, (key, value if value is not None else ""))
+                    elif command_type.upper() == "DELETE":
+                        cursor.execute("DELETE FROM kv_store WHERE key = ?;", (key,))
+                conn.commit()
+
     def apply_state_machine(self, command_type: str, key: str, value: Optional[str]) -> None:
         """Apply a committed SET or DELETE command to the kv_store table."""
         if command_type.upper() == "NOOP":

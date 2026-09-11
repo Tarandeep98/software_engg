@@ -51,7 +51,52 @@ This starts 3 nodes on `localhost`:
 - **Node 3**: `http://127.0.0.1:8003`
 
 ### 3. Open Dashboard
-Open `frontend/index.html` in any modern web browser (Edge, Chrome, Firefox). No build step, node_modules, or web server needed.
+Open `frontend/index.html` in any modern web browser, or directly navigate to:
+- `http://localhost:8001/`
+
+---
+
+## 📶 Running Across Different Devices on the Same Wi-Fi
+
+You can use the cluster across Wi-Fi in two ways:
+
+### Mode A: Access Cluster & Dashboard from Phones / Tablets / Other Laptops
+1. Start the cluster normally on your main PC:
+   ```bash
+   python run_cluster.py
+   ```
+2. The launcher will automatically detect and print your local Wi-Fi IP (e.g., `172.16.79.153`).
+3. On any phone, tablet, or laptop connected to the **same Wi-Fi network**, open your browser and navigate to:
+   ```
+   http://<YOUR_PC_WIFI_IP>:8001/
+   ```
+   *(e.g., `http://172.16.79.153:8001/`)*
+
+### Mode B: True Multi-Device Cluster (Nodes on Separate Computers)
+To run Node 1 on Laptop A, Node 2 on Laptop B, and Node 3 on Laptop C:
+
+1. **Find each laptop's Wi-Fi IP** by running `ipconfig` in Command Prompt.
+2. **Configure `cluster_config.json`**:
+   Copy `cluster_config.json.example` to `cluster_config.json` on each laptop and set the IP addresses:
+   ```json
+   {
+     "wifi_mode": true,
+     "nodes": [
+       {"id": 1, "host": "172.16.79.153", "port": 8001},
+       {"id": 2, "host": "172.16.79.154", "port": 8002},
+       {"id": 3, "host": "172.16.79.155", "port": 8003}
+     ]
+   }
+   ```
+3. **Launch the respective node on each device**:
+   - On Laptop A: `python run_node.py --id 1`
+   - On Laptop B: `python run_node.py --id 2`
+   - On Laptop C: `python run_node.py --id 3`
+   *(Or without a config file: `python run_node.py --id 1 --port 8001 --peers http://<IP_B>:8002,http://<IP_C>:8003`)*
+
+### 🛡️ Windows Firewall Notice
+If other devices cannot connect, Windows Firewall might be blocking inbound ports 8001-8003.
+Run `setup_firewall.bat` as Administrator (or right-click `setup_firewall.ps1` -> Run with PowerShell) to open the ports.
 
 ---
 

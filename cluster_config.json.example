@@ -1,0 +1,24 @@
+{
+  "wifi_mode": true,
+  "comment": "Configure the Wi-Fi IP addresses and ports for each device in your cluster. Copy this file to cluster_config.json and edit the IPs.",
+  "nodes": [
+    {
+      "id": 1,
+      "host": "172.16.79.153",
+      "port": 8001,
+      "device_label": "Laptop A (Node 1)"
+    },
+    {
+      "id": 2,
+      "host": "172.16.79.154",
+      "port": 8002,
+      "device_label": "Laptop B (Node 2)"
+    },
+    {
+      "id": 3,
+      "host": "172.16.79.155",
+      "port": 8003,
+      "device_label": "Laptop C (Node 3)"
+    }
+  ]
+}

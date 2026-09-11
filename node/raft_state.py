@@ -221,7 +221,7 @@ class RaftNode:
 
     async def start_background_loop(self) -> None:
         """Starts background task running election timers & heartbeats."""
-        self._http_client = httpx.AsyncClient(timeout=0.100)
+        self._http_client = httpx.AsyncClient(timeout=(config.RPC_TIMEOUT_MS / 1000.0))
         self._loop_task = asyncio.create_task(self._consensus_loop())
 
     async def stop_background_loop(self) -> None:
@@ -453,6 +453,8 @@ class RaftNode:
                 # Apply newly committed entries to the state machine
                 self._apply_committed_entries()
 
+            # Reset election timer after processing and applying entries
+            self._reset_election_timer()
             match_idx = args.prevLogIndex + len(args.entries)
             return AppendEntriesReply(term=self.current_term, success=True, matchIndex=match_idx)
 
@@ -560,6 +562,7 @@ class RaftNode:
 
     def _apply_committed_entries(self) -> None:
         """Apply committed entries (last_applied < commit_index) to the SQLite state machine."""
+        ops = []
         while self.last_applied < self.commit_index:
             self.last_applied += 1
             entry = self.get_log_entry_at(self.last_applied)
@@ -569,7 +572,9 @@ class RaftNode:
                 c_key = cmd.get("key", "")
                 c_val = cmd.get("value")
                 logger.info(f"Applying #{self.last_applied} to kv_store: {c_type} {c_key}={c_val}")
-                self.storage.apply_state_machine(c_type, c_key, c_val)
+                ops.append((c_type, c_key, c_val))
+        if ops:
+            self.storage.apply_state_machines_batch(ops)
 
     # -------------------------------------------------------------------------
     # Client Command Execution (Leader Only)
