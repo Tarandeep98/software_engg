@@ -7,7 +7,7 @@ Supports running locally or across different devices under the same Wi-Fi.
 import json
 import os
 import socket
-from typing import List, Optional
+from typing import List
 
 
 def get_lan_ip() -> str:
@@ -36,9 +36,12 @@ class Config:
         config_path = os.getenv("CLUSTER_CONFIG_FILE", "cluster_config.json")
         cluster_file_data = self._load_cluster_file(config_path)
 
-        # Wi-Fi mode flag (tunes timeouts for network jitter across separate devices)
-        wifi_mode_env = os.getenv("WIFI_MODE", "").lower() in ("1", "true", "yes")
-        self.WIFI_MODE: bool = wifi_mode_env or cluster_file_data.get("wifi_mode", False)
+        # Wi-Fi mode flag: if env var WIFI_MODE is set, use its value; otherwise use file value
+        wifi_env_raw = os.getenv("WIFI_MODE")
+        if wifi_env_raw is not None:
+            self.WIFI_MODE: bool = wifi_env_raw.strip().lower() in ("1", "true", "yes")
+        else:
+            self.WIFI_MODE: bool = bool(cluster_file_data.get("wifi_mode", False))
 
         # Host interface: default to 0.0.0.0 so all Wi-Fi devices can reach this node
         self.HOST: str = os.getenv("HOST", "0.0.0.0")
@@ -67,7 +70,7 @@ class Config:
         default_election_min = "300" if self.WIFI_MODE else "150"
         default_election_max = "600" if self.WIFI_MODE else "300"
         default_heartbeat = "100" if self.WIFI_MODE else "50"
-        default_rpc_timeout = "1000" if self.WIFI_MODE else "300"
+        default_rpc_timeout = "200" if self.WIFI_MODE else "100"
 
         self.ELECTION_TIMEOUT_MIN_MS: int = int(os.getenv("ELECTION_TIMEOUT_MIN_MS", default_election_min))
         self.ELECTION_TIMEOUT_MAX_MS: int = int(os.getenv("ELECTION_TIMEOUT_MAX_MS", default_election_max))
@@ -97,7 +100,7 @@ class Config:
                     "peers": peers
                 }
             return {
-                "wifi_mode": data.get("wifi_mode", True),
+                "wifi_mode": data.get("wifi_mode", False),
                 "nodes_by_id": nodes_by_id
             }
         except Exception as e:
