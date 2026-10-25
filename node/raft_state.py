@@ -110,7 +110,7 @@ class RaftNode:
         return random.uniform(min_sec, max_sec)
 
     def _reset_election_timer(self) -> None:
-        """Resets the heartbeat timer and calculates a fresh randomized timeout."""
+        """Resets the election timer and calculates a fresh randomized timeout."""
         self.last_heartbeat_timestamp = time.time()
         self.election_timeout = self._random_election_timeout()
 

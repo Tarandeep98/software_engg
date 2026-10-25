@@ -1,26 +1,7 @@
-# Virtual environment
-.venv/
-venv/
-env/
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# SQLite database files & WAL journals generated at runtime
-node_*.db*
 *.db
 *.db-wal
 *.db-shm
-
-# Pytest & test caches
-.pytest_cache/
 *.log
-
-# IDE & OS files
-.vscode/
-.idea/
-Thumbs.db
-Desktop.ini
+__pycache__/
+.pytest_cache/
+cluster_config.json
