@@ -7,7 +7,6 @@ Handles clean shutdown on Ctrl+C.
 
 import argparse
 import os
-import signal
 import subprocess
 import sys
 import time

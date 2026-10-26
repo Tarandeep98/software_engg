@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>URL Shortener</title>
+<style>
+  body { background:#121212; color:#e0e0e0; font-family:Arial,Helvetica,sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0; }
+  .container { max-width:400px; width:100%; text-align:center; }
+  input[type="url"] { width:100%; padding:0.6rem; margin:0.5rem 0; border:none; border-radius:4px; background:#1e1e1e; color:#e0e0e0; }
+  button { padding:0.6rem 1.2rem; border:none; border-radius:4px; background:#3b82f6; color:#fff; cursor:pointer; }
+  button:hover { background:#2563eb; }
+  .result { margin-top:1rem; word-break:break-all; }
+  .status { margin-top:0.5rem; font-size:0.9rem; color:#9ca3af; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>URL Shortener</h2>
+  <input id="urlInput" type="url" placeholder="Enter a URL (http:// or https://)" />
+  <button onclick="shorten()">Shorten</button>
+  <div class="result" id="result"></div>
+  <div class="status" id="status"></div>
+</div>
+<script>
+async function shorten(){
+  const url = document.getElementById('urlInput').value.trim();
+  if(!url){ alert('Enter a URL'); return; }
+  const resp = await fetch('/shorten', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
+  const data = await resp.json();
+  if(resp.ok){
+    document.getElementById('result').innerHTML = `<a href="${data.short_url}" target="_blank">${data.short_url}</a>`;
+    document.getElementById('status').textContent = `Node: ${data.node}, retries: ${data.retries}`;
+  } else {
+    document.getElementById('result').textContent = `Error: ${data.detail || data.error}`;
+    document.getElementById('status').textContent = '';
+  }
+}
+</script>
+</body>
+</html>
