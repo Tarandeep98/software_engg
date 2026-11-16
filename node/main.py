@@ -171,6 +171,12 @@ async def kv_set(payload: SetKVRequest, response: Response):
         if error == "not leader":
             response.status_code = status.HTTP_421_MISDIRECTED_REQUEST
             return {"error": "not leader", "leader_hint": leader_hint}
+        if error in ("Replication timeout waiting for quorum commit", "lost leadership"):
+            raise HTTPException(
+                status_code=504,
+                detail={"error": "outcome_unknown",
+                        "message": "Write was not confirmed by a majority in time. It may still be committed later. Check with /kv/get before retrying."}
+            )
         raise HTTPException(status_code=500, detail=error or "Failed to set value")
     return {"status": "ok", "key": payload.key, "value": payload.value}
 
@@ -191,6 +197,12 @@ async def kv_delete(payload: DeleteKVRequest, response: Response):
         if error == "not leader":
             response.status_code = status.HTTP_421_MISDIRECTED_REQUEST
             return {"error": "not leader", "leader_hint": leader_hint}
+        if error in ("Replication timeout waiting for quorum commit", "lost leadership"):
+            raise HTTPException(
+                status_code=504,
+                detail={"error": "outcome_unknown",
+                        "message": "Write was not confirmed by a majority in time. It may still be committed later. Check with /kv/get before retrying."}
+            )
         raise HTTPException(status_code=500, detail=error or "Failed to delete key")
     return {"status": "ok", "key": payload.key}
 
